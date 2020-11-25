@@ -78,7 +78,7 @@ class MatplotlibFigure(QWidget):
             x = [i for i in range(len(self.dfrms))]
             y=[]
             for c in range(len(self.dfrms.columns)):
-                y.append(self.dfrms.iloc[:,c].to_list())
+                y.append(self.dfrms.iloc[:,c].tolist())
             
             #self.figure.tight_layout()
             #self.figure.adjust(right=0.5)
@@ -96,13 +96,14 @@ class MatplotlibFigure(QWidget):
             plotlist=[]
             for l in range(len(listonoff)):
                 if (listonoff[l]==True):
-                    p, = ax.plot(x, y[l])
+                    p, = ax.plot(x, y[l],label=self.dfrms.columns[l])
                     #print("xrange=",ax.xaxis.get_data_interval())
                     #print("yrange=",ax.yaxis.get_data_interval())                    
                     plotlist.append(p)
 
             
-            ax.legend(self.dfrms.columns,bbox_to_anchor=(1.01,1),loc='upper left',prop={'size': 6,'weight':'bold'},borderaxespad=None)
+            #ax.legend(self.dfrms.columns,bbox_to_anchor=(1.01,1),loc='upper left',prop={'size': 6,'weight':'bold'},borderaxespad=None)
+            ax.legend(bbox_to_anchor=(1.01,1),loc='upper left',prop={'size': 6,'weight':'bold'},borderaxespad=None)
             self.figure.tight_layout()
             
             self.canvas.draw_idle()
