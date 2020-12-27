@@ -299,7 +299,10 @@ class MyTableWidget(QWidget):
         # now we need to clear the list of widgets
         self.delete_tab()
 
-        fname = QFileDialog.getOpenFileName(self, 'Open file', 'history.csv',"csv files (*.txt *.csv)")
+        #fname = QFileDialog.getOpenFileName(self, 'Open file', 'history.csv',"csv files (*.txt *.csv)")
+        fname = QFileDialog.getOpenFileName(self, 'Open file', 'history.csv',filter='csv files (*.csv)\n'
+                                                                                    'dat files (*.dat)\n'
+                                                                                    'all files (*)')
         self.filename=fname[0]
         # split the filename 
         fn = os.path.basename(self.filename)
