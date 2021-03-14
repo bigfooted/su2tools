@@ -1,3 +1,4 @@
+# monitor: displays and updates the residuals of the su2 history file in a window.
 import sys
 import os.path
 from PyQt5.QtWidgets import QMainWindow, QApplication, QPushButton, QWidget, QAction, QTabWidget, QVBoxLayout,\
@@ -9,6 +10,24 @@ import matplotlib
 from matplotlib import figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+
+
+# we first open the file and check if it is a legacy file format
+# for legacy format we have to skip a couple of rows in the header
+def skipRowsInHeader(filename):
+    checkheader = open(filename, "r")
+    line = checkheader.readline()
+    if line[0:5] == "TITLE":
+        #print("legacy file")
+        #isLegacy=True
+        skipRows = [0,2]
+    else:
+        #print("no legacy file")
+        #isLegacy=False
+        skipRows = []
+    checkheader.close()    
+    
+    return skipRows
 
 # ############################################################### #
 # ############################################################### #
@@ -62,18 +81,26 @@ class MatplotlibFigure(QWidget):
         #mpllayout.addWidget(self.canvas)
         
 
-    def plot(self,listonoff,filename):
+    def plot(self,listonoff,filename,normalize):
         # this will plot the actual residuals in a (x,y) plot inside the canvas
         if (filename != ""):  
+            
+            skipNrRows = skipRowsInHeader(filename)
+            
             self.figure.clf()
             # pandas data 
-            self.dataframe = pd.read_csv(filename)
+            #self.dataframe = pd.read_csv(filename,skiprows=[skipNrRows])
+            self.dataframe = pd.read_csv(filename,skiprows=skipNrRows)
             # get rid of quotation marks in the column names
             self.dataframe.columns = self.dataframe.columns.str.replace('"','')
+            # remove legacy string
+            #self.dataframe.columns = self.dataframe.columns.str.replace('VARIABLES=','')
+
             # get rid of spaces in the column names
             self.dataframe.columns = self.dataframe.columns.str.replace(' ','')
-            # limit the columns to the ones containing the string 'rms'
-            self.dfrms = self.dataframe.filter(regex='rms')
+            
+            # limit the columns to the ones containing the strings rms and Res
+            self.dfrms = self.dataframe.filter(regex='rms|Res')
     
             x = [i for i in range(len(self.dfrms))]
             y=[]
@@ -96,7 +123,17 @@ class MatplotlibFigure(QWidget):
             plotlist=[]
             for l in range(len(listonoff)):
                 if (listonoff[l]==True):
-                    p, = ax.plot(x, y[l],label=self.dfrms.columns[l])
+                    norm = 1.0
+                    yn = y[l]
+                    if normalize==True:
+                        if len(x)>1:
+                            if abs(y[l][1]) > 1e-6:
+                                norm = y[l][1]
+                                yn = [1+i-norm for i in y[l]]
+                    
+                    #print("x=",x[1],", y=",norm)
+
+                    p, = ax.plot(x, yn,label=self.dfrms.columns[l])
                     #print("xrange=",ax.xaxis.get_data_interval())
                     #print("yrange=",ax.yaxis.get_data_interval())                    
                     plotlist.append(p)
@@ -170,6 +207,9 @@ class MyTableWidget(QWidget):
         # add the tab screens to the tab widget
         self.tabs.resize(600, 600)
 
+        # normalize the plot with the value at the first iteration
+        self.normalize = False
+        
         # make the layout of the tabs
         self.make_tab()
 
@@ -195,18 +235,25 @@ class MyTableWidget(QWidget):
         self.btn_layout.update()
         
         
+    # ################################### #
+    # checkboxes for all the individual residual lines of the variables    
     def update_chkbx(self):
         self.chkbx = []
 
         if (self.filename != ""):  
-            # pandas data, specific to su2 
-            self.dataframe = pd.read_csv(self.filename)
+            
+            skipNrRows = skipRowsInHeader(self.filename)
+            
+            # read file into pandas dataframe, specific to su2 
+            self.dataframe = pd.read_csv(self.filename,skiprows=skipNrRows)
             # get rid of quotation marks in the column names
             self.dataframe.columns = self.dataframe.columns.str.replace('"','')
+            # remove legacy string
+            #self.dataframe.columns = self.dataframe.columns.str.replace('VARIABLES=','')
             # get rid of spaces in the column names
             self.dataframe.columns = self.dataframe.columns.str.replace(' ','')
             # limit the columns to the ones containing the string 'rms'
-            self.dfrms = self.dataframe.filter(regex='rms')
+            self.dfrms = self.dataframe.filter(regex='rms|Res')
             
             for name in self.dfrms:
                 self.chkbx.append(QCheckBox(name))
@@ -226,11 +273,23 @@ class MyTableWidget(QWidget):
         self.btn_layout.update()
     
     # ################################### #
+    # update plot based on normalization checkbox
+    def update_normalize(self,state):
+        if state == QtCore.Qt.Checked:
+            self.normalize=True
+            #print('Checked')
+        else:
+            self.normalize=False
+            #print('Unchecked')
+            
+            
+    
+    # ################################### #
     def make_tab(self):
         
-        self.update_chkbx()
-                
+        self.figure = MatplotlibFigure()
 
+        self.update_chkbx()
         
         '''file dialog section'''
         self.btn_openfile = QPushButton("Select File")
@@ -242,31 +301,38 @@ class MyTableWidget(QWidget):
         # temporarily stop the realtime update
         self.btn_plot_data = QPushButton('stop')
         self.btn_plot_data.setToolTip('Click to stop real time data gathering')
-
-         # setting size of button (width,height)
         self.btn_plot_data.resize(50, 50) 
         self.btn_plot_data.clicked.connect(self.timer_startstop)
 
-        # this is a one-column list with the start/stop button at the top
-        # followed by the list of lines
+        # normalize checkbox    
+        self.btn_normalize = QCheckBox('Normalize')
+        self.btn_normalize.setToolTip('Normalize all residuals with the value at iteration 1 ')
+        self.btn_normalize.stateChanged.connect(self.update_normalize)
+        
+        # now we add all the buttons in a vertical list
+        # 
         self.btn_layout = QVBoxLayout()
         self.btn_layout.addWidget(self.btn_openfile)        
         self.btn_layout.addWidget(self.show_filename)
         self.btn_layout.addWidget(self.btn_plot_data)
+        self.btn_layout.addWidget(self.btn_normalize)
+        
         for i in range(len(self.chkbx)):           
-            print("i=",i)
+            #print("i=",i)
             self.btn_layout.addWidget(self.chkbx[i])
 
+        
+        #self.btn_normalize.addWidget(self.btn_normalize)
+            
         # this adds stretch, so the button is always top-aligned (in a vbox)
         self.btn_layout.addStretch()
 
+        # those were the individual widgets, we now place the widgets in a frame and separate the frame from the plot using a splitter
 
         '''left-side layout'''
-
         left = QFrame()
         left.setLayout(self.btn_layout)
 
-        self.figure = MatplotlibFigure()
 
         # combine the buttons and the canvas in a splitter layout
         splitter1 = QSplitter(QtCore.Qt.Horizontal)
@@ -289,7 +355,8 @@ class MyTableWidget(QWidget):
         checklist=[]
         for c in self.chkbx:
             checklist.append(c.isChecked())
-        self.figure.plot(checklist,self.filename)       
+            
+        self.figure.plot(checklist,self.filename,self.normalize)       
         
         
     # ################################### #
@@ -337,14 +404,14 @@ class MyTableWidget(QWidget):
         checklist=[]
         for c in self.chkbx:
             checklist.append(c.isChecked())
-        self.figure.plot(checklist,self.filename)
+        self.figure.plot(checklist,self.filename,self.normalize)
 
     # ################################### #
     def changedata(self):
         checklist=[]
         for c in self.chkbx:
             checklist.append(c.isChecked())
-        self.figure.plot(checklist,self.filename)
+        self.figure.plot(checklist,self.filename,self.normalize)
 
         
 # ############################################################### #
